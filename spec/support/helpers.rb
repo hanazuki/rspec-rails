@@ -10,5 +10,13 @@ module Helpers
     RSpec.configuration = original_config
   end
 
+  def ignoring_warnings
+    original = $VERBOSE
+    $VERBOSE = nil
+    result = yield
+    $VERBOSE = original
+    result
+  end
+
   RSpec.configure {|c| c.include self}
 end
