@@ -11,11 +11,15 @@ module RSpec
         # rubocop: disable Style/ClassLength
         # @private
         class Base < RSpec::Matchers::BuiltIn::BaseMatcher
+          VERB_ENQUEUE = {:infinitive => 'enqueue', :preterite => 'enqueued', :past_participle => 'enqueued'}.freeze
+          VERB_PERFORM = {:infinitive => 'perform', :preterite => 'performed', :past_participle => 'performed'}.freeze
+
           def initialize
             @args = []
             @queue = nil
             @at = nil
             @block = Proc.new {}
+            @verb = VERB_ENQUEUE
             set_expected_number(:exactly, 1)
           end
 
@@ -67,9 +71,9 @@ module RSpec
           end
 
           def failure_message
-            "expected to enqueue #{base_message}".tap do |msg|
+            "expected to #{@verb[:infinitive]} #{base_message}".tap do |msg|
               if @unmatching_jobs.any?
-                msg << "\nQueued jobs:"
+                msg << "\n#{@verb[:past_participle].capitalize} jobs:"
                 @unmatching_jobs.each do |job|
                   msg << "\n  #{base_job_message(job)}"
                 end
@@ -78,7 +82,7 @@ module RSpec
           end
 
           def failure_message_when_negated
-            "expected not to enqueue #{base_message}"
+            "expected not to #{@verb[:infinitive]} #{base_message}"
           end
 
           def message_expectation_modifier
@@ -119,7 +123,7 @@ module RSpec
               msg << " with #{@args}," if @args.any?
               msg << " on queue #{@queue}," if @queue
               msg << " at #{@at}," if @at
-              msg << " but enqueued #{@matching_jobs_count}"
+              msg << " but #{@verb[:preterite]} #{@matching_jobs_count}"
             end
           end
 
@@ -196,6 +200,38 @@ module RSpec
             check(queue_adapter.enqueued_jobs)
           end
         end
+
+        # @private
+        class HavePerformedJob < Base
+          def initialize(job)
+            super()
+            @job = job
+            @verb = VERB_PERFORM
+          end
+
+          def matches?(proc)
+            raise ArgumentError, "have_performed_job and perform_job only support block expectations" unless Proc === proc
+
+            original_performed_jobs_count = queue_adapter.performed_jobs.count
+            proc.call
+            in_block_jobs = queue_adapter.performed_jobs.drop(original_performed_jobs_count)
+
+            check(in_block_jobs)
+          end
+        end
+
+        # @private
+        class HaveBeenPerformed < Base
+          def initialize
+            super
+            @verb = VERB_PERFORM
+          end
+
+          def matches?(job)
+            @job = job
+            check(queue_adapter.performed_jobs)
+          end
+        end
       end
 
       # @api public
@@ -267,6 +303,19 @@ module RSpec
       def have_been_enqueued
         check_active_job_adapter
         ActiveJob::HaveBeenEnqueued.new
+      end
+
+      # @api public
+      def have_performed_job(job = nil)
+        check_active_job_adapter
+        ActiveJob::HavePerformedJob.new(job)
+      end
+      alias_method :perform_job, :have_performed_job
+
+      # @api public
+      def have_been_performed
+        check_active_job_adapter
+        ActiveJob::HaveBeenPerformed.new
       end
 
     private
